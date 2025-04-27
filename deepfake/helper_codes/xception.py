@@ -25,24 +25,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.utils.model_zoo as model_zoo
 from torch.nn import init
-
-pretrained_settings = {
-    'xception': {
-        'imagenet': {
-            'url': 'http://data.lip6.fr/cadene/pretrainedmodels/xception-b5690688.pth',
-            'input_space': 'RGB',
-            'input_size': [3, 299, 299],
-            'input_range': [0, 1],
-            'mean': [0.5, 0.5, 0.5],
-            'std': [0.5, 0.5, 0.5],
-            'num_classes': 1000,
-            'scale': 0.8975 # The resize parameter of the validation transform should be 333, and make sure to center crop at 299x299
-        }
-    }
-}
-
 
 class SeparableConv2d(nn.Module):
     def __init__(self,in_channels,out_channels,kernel_size=1,stride=1,padding=0,dilation=1,bias=False):
@@ -128,7 +111,6 @@ class Xception(nn.Module):
 
         self.conv2 = nn.Conv2d(32,64,3,bias=False)
         self.bn2 = nn.BatchNorm2d(64)
-        #do relu here
 
         self.block1=Block(64,128,2,2,start_with_relu=False,grow_first=True)
         self.block2=Block(128,256,2,2,start_with_relu=True,grow_first=True)
@@ -149,21 +131,10 @@ class Xception(nn.Module):
         self.conv3 = SeparableConv2d(1024,1536,3,1,1)
         self.bn3 = nn.BatchNorm2d(1536)
 
-        #do relu here
         self.conv4 = SeparableConv2d(1536,2048,3,1,1)
         self.bn4 = nn.BatchNorm2d(2048)
 
         self.fc = nn.Linear(2048, num_classes)
-
-        # #------- init weights --------
-        # for m in self.modules():
-        #     if isinstance(m, nn.Conv2d):
-        #         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-        #         m.weight.data.normal_(0, math.sqrt(2. / n))
-        #     elif isinstance(m, nn.BatchNorm2d):
-        #         m.weight.data.fill_(1)
-        #         m.bias.data.zero_()
-        # #-----------------------------
 
     def features(self, input):
         x = self.conv1(input)
@@ -197,10 +168,9 @@ class Xception(nn.Module):
 
     def logits(self, features):
         x = self.relu(features)
-
         x = F.adaptive_avg_pool2d(x, (1, 1))
         x = x.view(x.size(0), -1)
-        x = self.last_linear(x)
+        x = self.fc(x)
         return x
 
     def forward(self, input):
@@ -209,23 +179,6 @@ class Xception(nn.Module):
         return x
 
 
-def xception(num_classes=1000, pretrained='imagenet'):
+def xception(num_classes=1000, pretrained=False):
     model = Xception(num_classes=num_classes)
-    if pretrained:
-        settings = pretrained_settings['xception'][pretrained]
-        assert num_classes == settings['num_classes'], \
-            "num_classes should be {}, but is {}".format(settings['num_classes'], num_classes)
-
-        model = Xception(num_classes=num_classes)
-        model.load_state_dict(model_zoo.load_url(settings['url']))
-
-        model.input_space = settings['input_space']
-        model.input_size = settings['input_size']
-        model.input_range = settings['input_range']
-        model.mean = settings['mean']
-        model.std = settings['std']
-
-    # TODO: ugly
-    model.last_linear = model.fc
-    del model.fc
     return model
